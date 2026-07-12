@@ -45,18 +45,38 @@ Full detail: [`docs/HARDWARE.md`](docs/HARDWARE.md) · Architecture: [`docs/ARCH
 ## Quick start
 
 ```bash
-# clone
-git clone https://github.com/robdon3/luminary.git
-cd luminary
+# YOU fly Earth → Moon (launcher to lander)
+luminary launch
 
-# run the constrained VM + demo mission profile
-python3 -m luminary demo
+# watch autopilot fly the full stack
+luminary launch --auto
 
-# run unit tests
-python3 -m unittest discover -s tests -v
+# descent-only cinematic (no stick)
+luminary demo
+```
 
-# inspect memory budget of a built "rope" image
-python3 -m luminary budget
+### Launch → Lander (interactive)
+
+Full campaign under Block II limits:
+
+1. **PAD** — ignite  
+2. **ASCENT** — climb, stage, gravity turn  
+3. **ORBIT** — circularize  
+4. **TLI** — trans-lunar injection  
+5. **COAST** — Earth to Moon (midcourse; possible **1202**)  
+6. **LOI** — lunar orbit insertion  
+7. **DESCENT** — powered landing  
+8. **TOUCHDOWN**
+
+**Controls:** `SPACE` thrust (sticky, `X` cuts) · `A`/`D` pitch · `S` stage · `B` circularize · `T` TLI · `M` midcourse · `H` help · `Q` quit
+
+Dual panel the whole way: **ASCII scene** (pad, rocket, orbit, coast, moon) + **DSKY/executive** (rope, RAM, AI shed).
+
+```bash
+luminary launch --fast
+luminary launch --auto --fast
+luminary demo --fast
+luminary budget
 ```
 
 Requires **Python 3.10+**. No third-party packages for the core VM/kernel.

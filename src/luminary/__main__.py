@@ -1,19 +1,28 @@
-"""CLI entry: python -m luminary [demo|budget|test-quick]"""
+"""CLI: luminary launch | demo | budget | version"""
 
 from __future__ import annotations
 
 import sys
 
 from luminary import RAM_WORDS, ROM_WORDS, CLOCK_HZ, __version__
-from luminary.kernel.executive import Executive
 from luminary.kernel.memory_map import MemoryMap
-from luminary.kernel.scheduler import ALARM_EXEC_OVERFLOW
 from luminary.ai.bnn import demo_descent_net
-from luminary.devices.imu import SyntheticIMU
-from luminary.devices.console import DSKYConsole
-from luminary.devices.timer import MissionTimer
 from luminary.vm.cpu import MiniISA, encode
 from luminary.vm.memory import assert_budgets
+
+
+def _parse_pace(argv: list[str]) -> tuple[float, bool]:
+    delay = 0.40
+    color = True
+    if "--fast" in argv:
+        delay = 0.12
+    if "--no-delay" in argv or "--instant" in argv:
+        delay = 0.0
+    if "--slow" in argv:
+        delay = 0.75
+    if "--no-color" in argv:
+        color = False
+    return delay, color
 
 
 def cmd_budget() -> int:
@@ -21,20 +30,21 @@ def cmd_budget() -> int:
     mmap.validate()
     net = demo_descent_net()
     rope_ai = net.estimate_rope_words()
-    # tiny sample program
     prog = [
         encode(MiniISA.LI, 5),
         encode(MiniISA.STA, 0x10),
         encode(MiniISA.HLT),
     ]
-    rope_used = len(prog) + rope_ai + 16  # header margin
+    rope_used = len(prog) + rope_ai + 16
     print("LUMINARY budget report")
     print(f"  version:     {__version__}")
     print(f"  clock:       {CLOCK_HZ} Hz (Block II contract)")
     print(f"  ROM (rope):  {rope_used} used / {ROM_WORDS} max words")
     print(f"  RAM (core):  {mmap.total_reserved()} reserved / {RAM_WORDS} max words")
-    print(f"  AI net:      {net.n_in}→{net.n_hidden}→{net.n_out} "
-          f"({net.weight_bit_count()} weight bits, ~{rope_ai} rope words)")
+    print(
+        f"  AI net:      {net.n_in}→{net.n_hidden}→{net.n_out} "
+        f"({net.weight_bit_count()} weight bits, ~{rope_ai} rope words)"
+    )
     print()
     print(mmap.report())
     try:
@@ -46,96 +56,96 @@ def cmd_budget() -> int:
         return 1
 
 
-def cmd_demo() -> int:
-    print("=" * 60)
-    print(" LUMINARY — Apollo Block II budgets · AI-era executive")
-    print("=" * 60)
+def cmd_demo(argv: list[str]) -> int:
+    delay, color = _parse_pace(argv)
+    if "--fast" not in argv and "--slow" not in argv and "--no-delay" not in argv:
+        delay = 0.40
+    from luminary.mission.live import run_live_mission
 
-    exe = Executive()
-    exe.boot()
+    return run_live_mission(delay=delay, color=color)
 
-    imu = SyntheticIMU(altitude=3000, vertical_rate=-60, fuel=800)
-    dsky = DSKYConsole()
-    timer = MissionTimer()
-    exe.devices["imu"] = imu
-    exe.devices["dsky"] = dsky
-    exe.devices["timer"] = timer
 
-    net = demo_descent_net()
-    # tiny rope program at 0, weights after
-    prog = [
-        encode(MiniISA.LI, 1),
-        encode(MiniISA.OUT, 0),  # would talk to dsky if wired
-        encode(MiniISA.HLT),
-    ]
-    exe.rope.load(prog + [0] * 8)
-    words = exe.attach_net(net, rope_base=16)
+def cmd_launch(argv: list[str]) -> int:
+    """Interactive Earth → Moon campaign."""
+    delay = 0.16
+    color = True
+    auto = "--auto" in argv
+    if "--fast" in argv:
+        delay = 0.08
+    if "--slow" in argv:
+        delay = 0.35
+    if "--no-delay" in argv or "--instant" in argv:
+        delay = 0.0
+    if "--no-color" in argv:
+        color = False
+    # auto defaults a bit snappier
+    if auto and "--slow" not in argv and "--fast" not in argv and "--no-delay" not in argv:
+        delay = 0.05
 
-    dsky.display("PROG 00  DESCENT DEMO")
-    dsky.display(f"AI ROPE WORDS {words}")
+    from luminary.mission.campaign import run_campaign
 
-    print("\n[1] Nominal descent with opportunistic AI")
-    for t in range(24):
-        timer.advance()
-        exe.schedule_control()
-        exe.schedule_sensor()
-        if t % 2 == 0:
-            exe.schedule_ai()
-        exe.scheduler.run_until_idle(exe, max_jobs=32)
-        # apply a crude thruster bias from AI decision if present
-        decision = exe.erasable.read(exe.mmap.ai_scratch_base + 16)
-        if decision == 2:  # brake class
-            imu.write(0, 40)
-        elif decision == 1:
-            imu.write(0, 10)
-
-    print(f"    {exe.status()}")
-    print(f"    altitude={imu.altitude} rate={imu.vertical_rate} fuel={imu.fuel}")
-    print(f"    last AI decision class={exe.erasable.read(exe.mmap.ai_scratch_base + 16)}")
-
-    print("\n[2] Executive overload — flood AI jobs (1202 path)")
-    exe.flood_ai_jobs(40)
-    # keep critical paths
-    for _ in range(5):
-        exe.schedule_control()
-        exe.schedule_sensor()
-    exe.scheduler.run_until_idle(exe, max_jobs=200)
-
-    print(f"    {exe.status()}")
-    if ALARM_EXEC_OVERFLOW in exe.scheduler.alarms:
-        print("    ALARM 1202  EXEC OVERFLOW  (AI shed, control retained)")
-    else:
-        print("    (overload threshold not crossed — adjust max_depth if needed)")
-
-    print("\n[3] Rope program smoke run")
-    assert exe.cpu is not None
-    exe.cpu.reset(entry=0)
-    exe.cpu.run(max_cycles=100)
-    print(f"    CPU halted={exe.cpu.halted} cycles={exe.cpu.cycles} "
-          f"sim_time={exe.cpu.simulated_seconds()*1e6:.2f} µs @ {CLOCK_HZ} Hz")
-
-    print("\nDSKY log:")
-    for m in dsky.messages:
-        print(f"  {m}")
-
-    print("\nDemo complete. Budgets held; AI remained a passenger.")
-    return 0
+    return run_campaign(delay=delay, color=color, auto=auto)
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] in {"-h", "--help", "help"}:
-        print("usage: python -m luminary [demo|budget|version]")
-        return 0
+    if not argv:
+        print(
+            "luminary — Apollo Block II budget OS\n"
+            "  luminary launch     Earth → Moon (you fly)\n"
+            "  luminary launch --auto\n"
+            "  luminary demo       descent-only watch mode\n"
+            "  luminary --help\n"
+        )
+        return cmd_launch([])
+
     cmd = argv[0]
+    if cmd in {"-h", "--help", "help"}:
+        print(
+            """luminary — AI-era OS under Apollo Block II budgets
+
+LAUNCH → LANDER (interactive)
+  luminary launch           fly Earth pad → lunar surface
+  luminary launch --auto    full mission autopilot (watch)
+  luminary launch --fast
+  luminary launch --slow
+
+  Controls:
+    SPACE / W   thrust (sticky — X to cut)
+    A / D       pitch (ascent)
+    S           stage sep
+    B           circularize (orbit) / assist LOI
+    T           start TLI burn
+    M           midcourse correction (coast)
+    H / ?       help
+    Q           abort
+
+DESCENT ONLY
+  luminary demo             watch powered descent + 1202
+  luminary demo --fast
+
+SYSTEM
+  luminary budget           memory contract
+  luminary version
+
+Same computer the whole way: ~4 KB RAM, ~72 KB rope, AI as passenger.
+"""
+        )
+        return 0
+    if cmd in {"launch", "play", "mission", "fly"}:
+        return cmd_launch(argv[1:])
     if cmd == "demo":
-        return cmd_demo()
+        return cmd_demo(argv[1:])
     if cmd == "budget":
         return cmd_budget()
     if cmd == "version":
         print(__version__)
         return 0
+    if cmd.startswith("-"):
+        # flags alone → launch
+        return cmd_launch(argv)
     print(f"unknown command: {cmd}", file=sys.stderr)
+    print("try: luminary launch   or   luminary --help", file=sys.stderr)
     return 2
 
 
