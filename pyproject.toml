@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luminary"
+version = "0.1.0"
+description = "AI-era OS constrained to Apollo Guidance Computer Block II hardware budgets"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "robdon3" }]
+keywords = ["apollo", "agc", "os", "embedded", "ai", "constrained", "space"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Operating System Kernels",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.scripts]
+luminary = "luminary.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
