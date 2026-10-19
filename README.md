@@ -1,130 +1,53 @@
-# LUMINARY
+# Luminary
 
-**An AI-era operating system constrained to Apollo Guidance Computer Block II hardware.**
+An experimental operating system, in Python, held to the public memory budget of the Apollo Guidance Computer Block II: about 2.048 MHz, 2,048 words of RAM (~4 KB), and 36,864 words of ROM (~72 KB). The question is what an OS looks like under those ceilings if a small AI model is allowed on board as a passenger, not as the pilot.
 
-> Same bones as the machine that landed humans on the Moon.  
-> New brain: purpose-built intelligence that fits in rope memory and 4 KB of core.
+This is not flight software and not a cycle-perfect AGC emulator. The real lunar-module program was also called Luminary; the name is homage, not a claim of lineage.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/)
+## What it is
 
----
+A virtual machine, a priority kernel, a rope-sized binary network, a handful of virtual devices, and a terminal campaign that flies from an Earth pad to a lunar landing. Host-side language models are described as authors of rope images. They are not inside the 72 KB.
 
-## The experiment
+## Problem
 
-In 1969, the Apollo Guidance Computer (AGC) Block II ran at **2.048 MHz** with **~4 KB RAM** and **~72 KB ROM**, consumed ~70 W, and weighed ~32 kg. It multitasked under hard real-time pressure, interfaced with ~150 devices, and survived priority overloads (the famous **1201/1202** program alarms) during Apollo 11's descent.
+Modern stacks hide cost. Luminary keeps that cost in the machine: odd-parity words, a fixed memory map, a rope image rejected when it exceeds `ROM_WORDS`, and a scheduler that sheds AI jobs first when the executive overloads (alarm 1202).
 
-**Luminary** asks: *what does an OS look like if we accept those exact ceilings, but design for the age of AI?*
+## Approach
 
-Not a historical replica. A **purpose-built system** that:
+```text
+Host (docs, tests, optional image packing)
+        │  rope image stays inside ROM_WORDS
+        ▼
+Luminary VM          15 data bits + odd parity, 2K erasable, 36K rope
+  Kernel             priority jobs, 1202-class load shed
+    ├─ control loops
+    ├─ devices: console, timer, IMU
+    └─ AI passenger   binary net in rope, activations in a fixed RAM window
+```
 
-1. **Honors the budget** — word length, memory map, cycle model, and scheduling discipline of Block II.
-2. **Exploits AI where it pays** — offline model distillation into rope-sized binary nets, host-side co-pilots that never bloat the flight computer, and AI-assisted verification of ultra-dense code.
-3. **Rejects the modern default** — no gigabytes of RAM, no thrashing kernels, no "just throw more cloud at it."
+The CPU is a small demo instruction set (load/store, add/sub, bitwise logic, jumps, immediate, device in/out, syscall, and halt). It is not the full AGC instruction set. Detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/HARDWARE.md](docs/HARDWARE.md), and [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md).
 
-The real LM software was also called *Luminary*. We reuse the name as homage, not as a claim of lineage.
+## Run
 
----
-
-## Hardware contract (Block II)
-
-| Resource | Spec | Budget in Luminary |
-|----------|------|--------------------|
-| Clock | 2.048 MHz (1.024 MHz four-phase internal) | Cycle-accurate *relative* timing in the VM |
-| Word | 16 bits (15 data + 1 parity) | Enforced on every memory access |
-| ROM (fixed / "rope") | 36,864 words ≈ 72 KB | Immutable program + constants + AI weights |
-| RAM (erasable) | 2,048 words ≈ 4 KB | Working set only |
-| Power / mass / volume | ~55–70 W · ~32 kg · ~1 ft³ | Documented design envelope (not simulated electrically) |
-| I/O | ~150 devices | Virtual device bus with priority channels |
-| Scheduling | Real-time multitasking + overload handling | Preemptive priority queues; 1202-style load shed |
-
-Full detail: [`docs/HARDWARE.md`](docs/HARDWARE.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · AI design: [`docs/AI_INTEGRATION.md`](docs/AI_INTEGRATION.md)
-
----
-
-## Quick start
+Python 3.10+. No third-party packages for the VM.
 
 ```bash
-# YOU fly Earth → Moon (launcher to lander)
-luminary launch
-
-# watch autopilot fly the full stack
-luminary launch --auto
-
-# descent-only cinematic (no stick)
-luminary demo
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+luminary launch          # you fly: pad → landing
+luminary launch --auto   # autopilot
+luminary demo            # descent only
+luminary budget          # rope and RAM check
 ```
 
-### Launch → Lander (interactive)
+`luminary` with no arguments also starts the launch campaign. Controls: `SPACE`/`W` thrust (sticky, `X` cuts), `A`/`D` pitch, `S` stage, `B` circularize or assist lunar orbit insertion, `T` trans-lunar injection, `M` midcourse, `H` help, `Q` quit.
 
-Full campaign under Block II limits:
-
-1. **PAD** — ignite  
-2. **ASCENT** — climb, stage, gravity turn  
-3. **ORBIT** — circularize  
-4. **TLI** — trans-lunar injection  
-5. **COAST** — Earth to Moon (midcourse; possible **1202**)  
-6. **LOI** — lunar orbit insertion  
-7. **DESCENT** — powered landing  
-8. **TOUCHDOWN**
-
-**Controls:** `SPACE` thrust (sticky, `X` cuts) · `A`/`D` pitch · `S` stage · `B` circularize · `T` TLI · `M` midcourse · `H` help · `Q` quit
-
-Dual panel the whole way: **ASCII scene** (pad, rocket, orbit, coast, moon) + **DSKY/executive** (rope, RAM, AI shed).
+Tests are standard-library `unittest` (pytest is not a package dependency):
 
 ```bash
-luminary launch --fast
-luminary launch --auto --fast
-luminary demo --fast
-luminary budget
+python -m unittest discover -s tests
 ```
 
-Requires **Python 3.10+**. No third-party packages for the core VM/kernel.
+## Tech
 
----
-
-## Repository layout
-
-```
-luminary/
-├── docs/                 # Hardware contract, architecture, AI strategy
-├── src/luminary/
-│   ├── vm/               # Block II word machine (registers, memory, cycles)
-│   ├── kernel/           # Scheduler, interrupts, memory manager, syscalls
-│   ├── ai/               # Rope-sized binary networks + inference
-│   └── devices/          # Virtual sensors / thrusters / DSKY-like console
-├── asm/                  # Tiny assembly / rope image builders
-├── examples/             # Mission-profile demos
-├── tests/                # Contract + kernel + AI budget tests
-└── tools/                # Host-side helpers (budget, pack, distill stubs)
-```
-
----
-
-## Design principles
-
-1. **Every word counts.** ROM and RAM budgets are first-class. Builds fail if an image exceeds rope or core.
-2. **Parity is not optional.** 15+1 words carry parity; the VM can inject and detect faults.
-3. **Priority over fairness.** Like the AGC, critical guidance/control beats nice-to-have intelligence.
-4. **AI is a passenger, not the pilot bus.** Inference runs as a scheduled job with a hard cycle cap. Overload → shed AI first (a deliberate 1202 philosophy).
-5. **Host AI is outside the hull.** LLMs may *author* or *verify* rope images on a development machine. They never ship inside the 72 KB.
-
----
-
-## Status
-
-**Phase 0 — foundation (this repo):** working VM, kernel skeleton, rope AI micro-inference, demos, tests, hardware docs.
-
-Roadmap sketches live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
----
-
-## Historical note
-
-Specs summarize the publicly documented **AGC Block II** (crewed flights). Values are rounded for systems design; see NASA/MIT documentation and secondary sources for bit-level fidelity. Luminary is an **experimental OS research project**, not flight software and not a cycle-perfect AGC emulator (for that, see projects like *Virtual AGC*).
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Python 3.10+, setuptools. Standard library only at runtime. MIT license.
